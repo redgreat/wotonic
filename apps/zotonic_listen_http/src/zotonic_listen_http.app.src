@@ -1,0 +1,23 @@
+%% -*- mode: erlang -*-
+{application, zotonic_listen_http,
+ [{description, "Zotonic HTTP Listener"},
+  {vsn, {file, "../../VERSION"}},
+  {registered, []},
+  {applications, [
+      kernel, stdlib,
+      cowmachine,
+      ringbuffer,
+      zotonic_core
+  ]},
+  {env, []},
+  {modules,
+   [
+    zotonic_listen_http
+   ]},
+  {doc, "doc"},
+  {licenses, ["Apache-2.0"]},
+  {links, [
+    {"Website", "https://zotonic.com/"},
+    {"GitHub", "https://github.com/zotonic/zotonic"}
+  ]}
+ ]}.

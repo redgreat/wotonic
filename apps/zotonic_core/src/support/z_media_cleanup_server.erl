@@ -1,0 +1,157 @@
+%% @author Marc Worrell <marc@worrell.nl>
+%% @copyright 2013-2025 Marc Worrell
+%% @doc Delete medium files that were attached to deleted resources.
+%% Files are deleted after 5 weeks, which is the maximum retention period
+%% of backups and the default retention period of the filestore.
+%% This allows for a recover of deleted media items.
+%% @end
+
+%% Copyright 2013-2025 Marc Worrell
+%%
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
+%%
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
+
+-module(z_media_cleanup_server).
+-author("Marc Worrell <marc@worrell.nl>").
+-behaviour(gen_server).
+
+%% gen_server exports
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+-export([start_link/1]).
+
+%% interface functions
+-export([
+    cleanup/1
+]).
+
+-include_lib("zotonic_file.hrl").
+-include_lib("kernel/include/logger.hrl").
+
+% Check every 10 minutes if we have anything to delete.
+% Check every 10 seconds when working through a backlog.
+-define(CLEANUP_TIMEOUT_LONG, 600000).
+-define(CLEANUP_TIMEOUT_SHORT, 10000).
+
+-record(state, {site :: atom()}).
+
+
+%% @doc Force a cleanup - useful after mass deletes, or when disk space is getting low.
+cleanup(Context) ->
+    Name = z_utils:name_for_site(?MODULE, Context),
+    gen_server:cast(Name, cleanup).
+
+
+%%====================================================================
+%% API
+%%====================================================================
+
+%% @doc Starts the server
+-spec start_link( atom() ) -> {ok, pid()} | ignore | {error, term()}.
+start_link(Site) ->
+    Name = z_utils:name_for_site(?MODULE, Site),
+    gen_server:start_link({local, Name}, ?MODULE, Site, []).
+
+%%====================================================================
+%% gen_server callbacks
+%%====================================================================
+
+init(Site) ->
+    logger:set_process_metadata(#{
+        site => Site,
+        module => ?MODULE
+    }),
+    {ok, #state{site=Site}, ?CLEANUP_TIMEOUT_LONG}.
+
+handle_call(Message, _From, State) ->
+    {stop, {unknown_call, Message}, State}.
+
+handle_cast(cleanup, State) ->
+    case do_cleanup(State#state.site) of
+        {ok, 0} ->
+            {noreply, State, ?CLEANUP_TIMEOUT_LONG};
+        {ok, _} ->
+            {noreply, State, ?CLEANUP_TIMEOUT_SHORT}
+    end;
+
+handle_cast(Message, State) ->
+    {stop, {unknown_cast, Message}, State}.
+
+handle_info(timeout, State) ->
+    handle_cast(cleanup, State);
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+terminate(_Reason, _State) ->
+    ok.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+
+%%====================================================================
+%% support functions
+%%====================================================================
+
+do_cleanup(Site) ->
+    Context = z_context:new(Site),
+    do_cleanup_1(z_db:q("
+                    select id, filename, deleted
+                    from medium_deleted
+                    where deleted < now() - interval '5 weeks'
+                    order by id
+                    limit 100",
+                    Context),
+                 Context).
+
+do_cleanup_1([], _Context) ->
+    {ok, 0};
+do_cleanup_1(Rs, Context) ->
+    lists:foreach(fun(R) ->
+                    do_cleanup_file(R, Context)
+                  end, Rs),
+    Ranges = z_utils:ranges([ Id || {Id, _, _} <- Rs ]),
+    z_db:transaction(
+            fun(Ctx) ->
+                lists:foreach(fun
+                                ({A,A}) ->
+                                    z_db:q("delete from medium_deleted where id = $1", [A], Ctx);
+                                ({A,B}) ->
+                                    z_db:q("delete from medium_deleted where id >= $1 and id <= $2", [A,B], Ctx)
+                              end,
+                              Ranges)
+             end,
+             Context),
+    {ok, length(Rs)}.
+
+do_cleanup_file({_Id, Filename, Date}, Context) ->
+    PreviewPath = z_path:media_preview(Context),
+    ArchivePath = z_path:media_archive(Context),
+    % Remove from the file system
+    PreviewFilePath = filename:join(PreviewPath, Filename),
+    PreviewDir = filename:dirname(PreviewFilePath),
+    PreviewFile = filename:basename(PreviewFilePath),
+    PreviewFilePattern = binary_to_list(iolist_to_binary([PreviewFile, "(*"])),
+    Previews = z_utils:wildcard(PreviewFilePattern, PreviewDir),
+    [ file:delete(Preview) || Preview <- Previews ],
+    file:delete(filename:join(ArchivePath, Filename)),
+    % Remove from the file store
+    PreviewStore = iolist_to_binary([filename:basename(PreviewPath), $/, Filename, $( ]),
+    ArchiveStore = iolist_to_binary([filename:basename(ArchivePath), $/, Filename ]),
+    z_notifier:first(#filestore{action=delete, path={prefix, PreviewStore}}, Context),
+    z_notifier:first(#filestore{action=delete, path=ArchiveStore}, Context),
+    ?LOG_DEBUG(#{
+        text => <<"Medium cleanup">>,
+        in => zotonic_core,
+        filename => Filename,
+        date => Date
+    }),
+    ok.

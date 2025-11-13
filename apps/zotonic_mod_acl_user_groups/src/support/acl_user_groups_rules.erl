@@ -1,0 +1,275 @@
+%% @copyright 2015-2023 Marc Worrell
+%% @doc Expansion of all user groups and content groups, used to fill acl lookup tables.
+%% @end
+
+%% Copyright 2015-2023 Marc Worrell
+%%
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
+%%
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
+
+-module(acl_user_groups_rules).
+
+-export([
+    expand/2,
+    expand_rsc/2,
+    expand_collab/2,
+    test/0
+]).
+
+-export([
+    tree_expand/1,
+    tree_ids/1
+    ]).
+
+-include_lib("zotonic_core/include/zotonic.hrl").
+
+-type rsc_id() :: integer().
+
+-type module_name() :: atom().
+-type module_action() :: use.
+
+-type only_if_owner() :: true | false.
+-type allow() :: true | false.
+-type user_group_id() :: rsc_id().
+-type content_group_id() :: rsc_id().
+-type category_id() :: rsc_id().
+-type visibility() :: undefined | integer().
+-type rsc_action() :: view | insert | delete | update | link.
+
+-type module_rule() :: {module_name(), module_action(), user_group_id(), allow()}.
+-type rsc_rule() :: {content_group_id(), {category_id(), visibility(), rsc_action(), only_if_owner(), allow()}, user_group_id()}.
+-type collab_rule() :: {collab, {category_id(), visibility(), rsc_action(), only_if_owner(), allow()}, collab}.
+
+-type rule() :: rsc_rule() | module_rule().
+-type user_group_path() :: {user_group_id(), list(user_group_id())}.
+
+-spec expand(edit|publish, #context{}) -> {list(content_group_id()),
+                                           list(user_group_id()),
+                                           list(user_group_path()),
+                                           list(rule())}.
+expand(State, Context) ->
+    GroupTree = m_hierarchy:menu(content_group, Context),
+    UserTree = m_hierarchy:menu(acl_user_group, Context),
+    RscRules = m_acl_rule:all_rules(rsc, State, Context),
+    RuleGroups = rule_content_groups(RscRules),
+    {lists:usort(tree_ids(GroupTree) ++ RuleGroups),
+     tree_ids(UserTree),
+     expand_group_path(UserTree),
+     expand_module(State, UserTree, Context)
+        ++ expand_collab(State, Context)
+        ++ expand_rsc(State, RscRules, GroupTree, UserTree, Context)}.
+
+rule_content_groups(Rules) ->
+    Ks = lists:foldl(
+        fun
+            (#{ <<"content_group_id">> := undefined }, Acc) ->
+                Acc;
+            (#{ <<"content_group_id">> := Id }, Acc) ->
+                Acc#{ Id => true }
+        end,
+        #{},
+        Rules),
+    maps:keys(Ks).
+
+-spec expand_rsc(edit|publish, z:context()) -> list(rsc_rule()).
+expand_rsc(State, Context) ->
+    GroupTree = m_hierarchy:menu(content_group, Context),
+    UserTree = m_hierarchy:menu(acl_user_group, Context),
+    expand_rsc(State, m_acl_rule:all_rules(rsc, State, Context), GroupTree, UserTree, Context).
+
+-spec expand_module(edit|publish, list(), z:context()) -> list(module_rule()).
+expand_module(State, UserTree, Context) ->
+    Modules = z_module_manager:active(Context),
+    Modules1 = [ {<<>>, Modules} | [ {z_convert:to_binary(M),[M]} || M <- Modules ] ],
+    RuleRows = resort_deny_rules(m_acl_rule:all_rules(module, State, Context)),
+    Rules = expand_rule_rows(<<"module">>, Modules1, RuleRows, Context),
+    lists:map(
+        fun({x,{M, _V, A,_IsOwner,IsAllow},GId}) ->
+            {z_convert:to_atom(M),A,GId,IsAllow}
+        end,
+        expand_rules([{x,[]}], Rules, UserTree, Context)).
+
+-spec expand_collab(edit|publish, z:context()) -> list( collab_rule() ).
+expand_collab(State,Context) ->
+    CategoryTree = m_category:menu(Context),
+    RuleRows = resort_deny_rules(m_acl_rule:all_rules(collab, State, Context)),
+    Cs = [{undefined, tree_ids(CategoryTree)} | tree_expand(CategoryTree) ],
+    Rules = expand_rule_rows(<<"category_id">>, Cs, RuleRows, Context),
+    [ {collab, Action, collab} || {undefined, Action, undefined} <- Rules ].
+
+-spec expand_rsc(edit|publish, list(), list(), list(), z:context()) -> list(rsc_rule()).
+expand_rsc(_State, RscRules, GroupTree, UserTree, Context) ->
+    CategoryTree = m_category:menu(Context),
+    RuleRows = resort_deny_rules(RscRules),
+    Cs = [{undefined, tree_ids(CategoryTree)} | tree_expand(CategoryTree) ],
+    Rules = expand_rule_rows(<<"category_id">>, Cs, RuleRows, Context),
+    expand_rules(GroupTree, Rules, UserTree, Context).
+
+expand_rule_rows(<<"category_id">>, Cs, RuleRows, Context) ->
+    NonMetaCs = remove_meta_category(Cs, Context),
+    lists:flatten([ expand_rule_row(<<"category_id">>, RuleRow, Cs, NonMetaCs, Context) || RuleRow <- RuleRows ]);
+expand_rule_rows(Prop, Cs, RuleRows, Context) ->
+    lists:flatten([ expand_rule_row(Prop, RuleRow, Cs, Cs, Context) || RuleRow <- RuleRows ]).
+
+remove_meta_category(Cs, Context) ->
+    case m_category:name_to_id(meta, Context) of
+        {ok, MetaId} ->
+            MetaIds = [ MetaId | proplists:get_value(MetaId, Cs, [])],
+            Cs1 = lists:filter(fun({Id,_SubIds}) ->
+                                    not lists:member(Id, MetaIds)
+                               end,
+                               Cs),
+            [ {Id, SubIds -- MetaIds} || {Id, SubIds} <- Cs1 ];
+        {error, _} ->
+            Cs
+    end.
+
+expand_rule_row(Prop, Row, Cs, NonMetaCs, Context) when is_binary(Prop) ->
+    #{
+        <<"actions">> := Actions0,
+        <<"is_block">> := IsBlock
+    } = Row,
+    Actions = [ Act || {Act,true} <- Actions0 ],
+    IsAllow = not IsBlock,
+    IsOwner = maps:get(<<"is_owner">>, Row, false),
+    UserGroupId = maps:get(<<"acl_user_group_id">>, Row, undefined),
+    ContentGroupId = maps:get(<<"content_group_id">>, Row, undefined),
+    IsCategoryExact = maps:get(<<"is_category_exact">>, Row, false),
+    Visibility = maps:get(<<"visibility">>, Row, undefined),
+    PropId = maps:get(Prop, Row),
+    ContentGroupName = m_rsc:p_no_acl(ContentGroupId, name, Context),
+    CIdsEdit = maybe_filter_meta(ContentGroupName, Prop, PropId, Cs, NonMetaCs, Context),
+    CIdsView = proplists:get_value(PropId, Cs, [PropId]),
+    lists:flatten(
+        [
+            [
+              {ContentGroupId, {CId, Visibility, Action, IsOwner, IsAllow}, UserGroupId}
+              || CId <- select_cids(Action, IsCategoryExact, CIdsEdit, CIdsView)
+            ]
+            || Action <- Actions
+        ]).
+
+select_cids(view, false, _Edit, View) -> View;
+select_cids(view, true, _Edit, [View|_]) -> [View];
+select_cids(_Action, false, Edit, _View) -> Edit;
+select_cids(_Action, true, [Edit|_], _View) -> [Edit];
+select_cids(_Action, _IsExact, _Edit, _View) -> [].
+
+maybe_filter_meta(<<"system_content_group">>, <<"category_id">>, PropId, Cs, _NonMetaCs, _Context) ->
+    proplists:get_value(PropId, Cs, [PropId]);
+maybe_filter_meta(_ContentGroupName, <<"category_id">>, PropId, Cs, NonMetaCs, Context) ->
+    case m_rsc:is_a(PropId, meta, Context) of
+        true -> proplists:get_value(PropId, Cs, [PropId]);
+        false -> proplists:get_value(PropId, NonMetaCs, [PropId])
+    end;
+maybe_filter_meta(_ContentGroupName, _Prop, PropId, Cs, _NonMetaCs, _Context) ->
+    proplists:get_value(PropId, Cs, [PropId]).
+
+%% @doc Given two id lists, return all possible combinations.
+expand_rules(TreeA, Rules, TreeB, _Context) ->
+    As = [{undefined, tree_ids(TreeA)} | tree_expand(TreeA) ],
+    Bs = tree_expand(TreeB),
+    lists:flatten(
+        lists:map(fun({A, Pred, B}) ->
+                        case {lists:keyfind(A, 1, As), lists:keyfind(B, 1, Bs)} of
+                            {{A, A1}, {B, B1}} ->
+                                expand_rule(A1, Pred, B1);
+                            {false, {B, B1}} ->
+                                % acl_collaboration_groups are not part of the group hierarchy
+                                expand_rule([A], Pred, B1);
+                            Other ->
+                                ?LOG_WARNING(#{
+                                    text => <<"ACL tree expand returned unexpected value">>,
+                                    in => zotonic_mod_acl_user_groups,
+                                    actor => A,
+                                    predicate => Pred,
+                                    object => B,
+                                    result => Other
+                                }),
+                                []
+                        end
+                  end,
+                  Rules)).
+
+expand_rule(As, Pred, Bs) ->
+    [ {A, Pred, B} || A <- As, B <- Bs ].
+
+
+%% @doc Given a tree, return a list with (id, [id|contained_ids])
+tree_expand(Tree) ->
+    lists:flatten([ element(2,tree_expand(T, [])) || T <- Tree ]).
+
+tree_expand({Id, []}, Acc) ->
+    {[Id], [{Id,[Id]}|Acc]};
+tree_expand({Id, Subs}, Acc) ->
+    {BIds, Acc1} = lists:foldl(
+                            fun(SId, {BIdsAcc, LookupAcc}) ->
+                                {BelowIds, LookupAcc1} = tree_expand(SId, LookupAcc),
+                                {[BelowIds,BIdsAcc], LookupAcc1}
+                            end,
+                            {[], Acc},
+                            Subs),
+    BIds1 = lists:flatten(BIds),
+    {[Id|BIds1], [{Id,[Id|BIds1]} | Acc1]}.
+
+tree_ids(Tree) ->
+    tree_ids(Tree, []).
+
+tree_ids([], Acc) ->
+    Acc;
+tree_ids([{Id,Sub}|Rest], Acc) ->
+    Acc1 = tree_ids(Sub, Acc),
+    tree_ids(Rest, [Id|Acc1]).
+
+% Fetch the path to all ids in the tree
+expand_group_path(Tree) ->
+    expand_group_path(Tree, [], []).
+
+expand_group_path([], _Path, Acc) ->
+    Acc;
+expand_group_path([{Id, Subs}|Rest], Path, Acc) ->
+    Path1 = [Id|Path],
+    Acc1 = [{Id, Path1}|Acc],
+    Acc2 = expand_group_path(Subs, Path1, Acc1),
+    expand_group_path(Rest, Path, Acc2).
+
+
+% Bubble all deny rules after the allow rules for a specific user group
+resort_deny_rules(Rs) ->
+    resort_deny_rules(Rs, undefined, [], []).
+
+resort_deny_rules([], _GroupId, DenyAcc, Acc) ->
+    lists:reverse(DenyAcc ++ Acc);
+resort_deny_rules([R|Rs], GroupId, DenyAcc, Acc) ->
+    case maps:get(<<"acl_user_group_id">>, R, undefined) of
+        GroupId ->
+            case maps:get(<<"is_block">>, R) of
+                true ->
+                    resort_deny_rules(Rs, GroupId, [R|DenyAcc], Acc);
+                false ->
+                    resort_deny_rules(Rs, GroupId, DenyAcc, [R|Acc])
+            end;
+        NewGroupId ->
+            Acc1 = DenyAcc ++ Acc,
+            case maps:get(<<"is_block">>, R) of
+                true ->
+                    resort_deny_rules(Rs, NewGroupId, [R], Acc1);
+                false ->
+                    resort_deny_rules(Rs, NewGroupId, [], [R|Acc1])
+            end
+    end.
+
+test() ->
+    [] = tree_expand([]),
+    [{1,[1]}, {2,[2]}] = tree_expand([{1,[]}, {2,[]}]),
+    [{1,[1]},{2,[2,3]},{3,[3]}] = tree_expand([{1,[]}, {2,[{3,[]}]}]),
+    ok.

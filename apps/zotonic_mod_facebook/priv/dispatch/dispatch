@@ -1,0 +1,6 @@
+%% -*- mode: erlang -*-
+[
+    {facebook_authorize, [ "oauth-service", "authorize", "facebook" ],
+                         controller_oauth2_service_authorize,
+                         [ {service_module, z_facebook_oauth_service} ]}
+].

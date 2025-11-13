@@ -1,0 +1,118 @@
+/* zp-menuedit.css */
+ul.tree-list {
+  padding: 0;
+  margin: 0;
+}
+ul.tree-list > li:last-child {
+  margin-bottom: 10px;
+}
+ul.tree-list li {
+  list-style-type: none;
+  margin: 0;
+  padding: 0;
+  position: relative;
+  line-height: 34px;
+  border: none;
+}
+ul.tree-list li.placeholder {
+  background: #aaa;
+  border-radius: 4px;
+}
+ul.tree-list li li.menu-item:last-child {
+  margin: 0;
+}
+ul.tree-list li .menu-toggle > i,
+ul.tree-list li .z-icon-drag,
+ul.tree-list li .z-btn-remove {
+  font-size: 16px;
+  line-height: 34px;
+}
+ul.tree-list li div.menu-wrapper {
+  display: grid;
+  grid-template-columns: minmax(10px, auto) auto 1fr auto auto;
+  grid-template-rows: minmax(34px, auto);
+  border: 1px solid #aaa;
+  line-height: 34px;
+  border-radius: 4px;
+}
+ul.tree-list li div.menu-wrapper .menu-drag {
+  grid-column: 1;
+  cursor: move;
+  background: repeat-y url("/lib/images/grippy2.png") 3px 0;
+  padding: 10px;
+}
+ul.tree-list li div.menu-wrapper .menu-toggle {
+  grid-column: 2;
+  width: 40px;
+  height: 34px;
+  color: #ccc;
+  display: none;
+}
+ul.tree-list li div.menu-wrapper .menu-toggle:hover {
+  cursor: pointer;
+  text-decoration: none;
+  color: black;
+}
+ul.tree-list li div.menu-wrapper .menu-toggle > i {
+  cursor: pointer;
+}
+ul.tree-list li div.menu-wrapper .menu-toggle > i.menu-collapse {
+  display: none;
+}
+ul.tree-list li div.menu-wrapper .menu-toggle > i.menu-expand {
+  display: block;
+}
+ul.tree-list li div.menu-wrapper .menu-title,
+ul.tree-list li div.menu-wrapper > a {
+  grid-column: 3;
+  line-height: 34px;
+}
+ul.tree-list li div.menu-wrapper .warning {
+  grid-column: 4;
+  line-height: 34px;
+}
+ul.tree-list li div.menu-wrapper .btns {
+  grid-column: 5;
+  margin: 0 4px;
+}
+ul.tree-list li div.menu-wrapper .btns .btn-group {
+  margin-left: 4px;
+  display: inline-block;
+}
+ul.tree-list li div.menu-wrapper > .z-btn-remove {
+  grid-column: 5;
+  margin: 0 4px;
+  height: 34px;
+  width: 24px;
+  padding-right: 4px;
+}
+ul.tree-list li div.menu-wrapper .menu-edit {
+  cursor: pointer;
+}
+ul.tree-list li.has-submenu > div a.menu-toggle {
+  display: block;
+}
+ul.tree-list li.submenu-open > div a.menu-toggle > i.menu-collapse {
+  display: block;
+}
+ul.tree-list li.submenu-open > div a.menu-toggle > i.menu-expand {
+  display: none;
+}
+ul.tree-list li > ul {
+  display: none;
+}
+ul.tree-list li.submenu-open > ul {
+  display: block;
+}
+.menu-edit a {
+  float: right;
+}
+.menu-item .category {
+  color: #999;
+}
+#menu-editor .widget-header {
+  height: 28px;
+}
+#menu-editor .widget-header .btn-group {
+  margin-right: 12px;
+}

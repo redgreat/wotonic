@@ -1,0 +1,1 @@
+{% include "_admin_edit_content_mailinglist.tpl" show_header %}

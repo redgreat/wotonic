@@ -1,0 +1,9 @@
+*
+!bin/
+!docker/
+!apps/
+!GNUmakefile
+!Makefile
+!rebar*
+!src/
+!VERSION

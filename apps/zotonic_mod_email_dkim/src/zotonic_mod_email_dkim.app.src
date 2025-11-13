@@ -1,0 +1,14 @@
+{application, zotonic_mod_email_dkim, [
+    {description, "Signs outgoing e-mails with DomainKeys Identified Mail Signatures (RFC 6376)"},
+    {vsn, {file, "../../VERSION"}},
+    {registered, []},
+    {applications, [kernel, stdlib, zotonic_core]},
+    {env, []},
+    {modules, []},
+    {doc, "doc"},
+    {licenses, ["Apache-2.0"]},
+    {links, [
+        {"Website", "https://zotonic.com/"},
+        {"GitHub", "https://github.com/zotonic/zotonic"}
+    ]}
+]}.

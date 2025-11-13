@@ -1,0 +1,11 @@
+{application, %%SITE%%, [
+    {description, "Default Zotonic empty site"},
+    {vsn, "git"},
+    {registered, []},
+    {mod, %%APPSRCMOD%%},
+    {applications, [kernel, stdlib, zotonic_core]},
+    {env, []},
+    {modules, []},
+    {maintainers, []},
+    {licenses, ["Apache-2.0"]}
+]}.

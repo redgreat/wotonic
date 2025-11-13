@@ -1,0 +1,23 @@
+%% -*- mode: erlang -*-
+{application, zotonic_filehandler,
+ [{description, "Zotonic File Handler"},
+  {vsn, {file, "../../VERSION"}},
+  {registered, []},
+  {env, []},
+  {mod, {zotonic_filehandler_app, []}},
+  {modules, []},
+  {applications, [
+    kernel, stdlib,
+    erlexec,
+    jobs,
+    buffalo,
+    zotonic_notifier,
+    zotonic_filewatcher
+  ]},
+  {doc, "doc"},
+  {licenses, ["Apache-2.0"]},
+  {links, [
+    {"Website", "https://zotonic.com/"},
+    {"GitHub", "https://github.com/zotonic/zotonic"}
+  ]}
+ ]}.

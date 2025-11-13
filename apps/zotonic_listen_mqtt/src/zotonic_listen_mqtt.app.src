@@ -1,0 +1,21 @@
+%% -*- mode: erlang -*-
+{application, zotonic_listen_mqtt,
+ [{description, "Zotonic MQTT Listener"},
+  {vsn, {file, "../../VERSION"}},
+  {registered, []},
+  {applications, [
+      kernel, stdlib,
+      ranch, zotonic_core, mqtt_sessions
+  ]},
+  {env, []},
+  {modules,
+   [
+    zotonic_listen_mqtt
+   ]},
+  {doc, "doc"},
+  {licenses, ["Apache-2.0"]},
+  {links, [
+    {"Website", "https://zotonic.com/"},
+    {"GitHub", "https://github.com/zotonic/zotonic"}
+  ]}
+ ]}.

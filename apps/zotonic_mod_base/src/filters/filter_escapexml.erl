@@ -1,0 +1,39 @@
+%% @author Marc Worrell <marc@worrell.nl>
+%% @copyright 2010-2024 Marc Worrell
+%% @doc 'escapexml' filter, escape a value for output in XML
+%% @end
+
+%% Copyright 2010-2024 Marc Worrell
+%%
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
+%%
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
+
+-module(filter_escapexml).
+-moduledoc("
+Escape the value for insertion in xml output.
+
+For example:
+
+
+```django
+{{ value|escapexml }}
+```
+
+When the value is `<hel'lo\\>` then the output is `&#60;hel&#39;lo&#62;`.
+").
+-export([escapexml/2]).
+
+escapexml(Input, Context) when is_map(Input) ->
+    JSON = z_json:encode(Input),
+    escapexml(JSON, Context);
+escapexml(B, Context) ->
+    z_xml:escape(B, Context).

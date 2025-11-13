@@ -1,0 +1,18 @@
+%% -*- mode: erlang -*-
+{application, zotonic_notifier,
+ [{description, "Zotonic Notifier"},
+  {vsn, {file, "../../VERSION"}},
+  {registered, []},
+  {mod, {zotonic_notifier, []}},
+  {env, []},
+  {modules, []},
+  {applications, [
+    kernel, stdlib
+  ]},
+  {doc, "doc"},
+  {licenses, ["Apache-2.0"]},
+  {links, [
+    {"Website", "https://zotonic.com/"},
+    {"GitHub", "https://github.com/zotonic/zotonic"}
+  ]}
+ ]}.

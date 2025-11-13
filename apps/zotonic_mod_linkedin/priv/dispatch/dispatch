@@ -1,0 +1,6 @@
+%% -*- mode: erlang -*-
+[
+    {linkedin_authorize, ["oauth-service", "authorize", "linkedin" ],
+                         controller_oauth2_service_authorize,
+                         [ {service_module, z_linkedin_oauth_service} ]}
+].

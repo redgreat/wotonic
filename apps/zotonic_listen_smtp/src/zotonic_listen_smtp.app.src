@@ -1,0 +1,21 @@
+%% -*- mode: erlang -*-
+{application, zotonic_listen_smtp,
+ [{description, "Zotonic SMTP Listener"},
+  {vsn, {file, "../../VERSION"}},
+  {registered, []},
+  {applications, [
+      kernel, stdlib, gen_smtp,
+      zotonic_core
+  ]},
+  {env, []},
+  {modules,
+   [
+    zotonic_listen_smtp
+   ]},
+  {doc, "doc"},
+  {licenses, ["Apache-2.0"]},
+  {links, [
+    {"Website", "https://zotonic.com/"},
+    {"GitHub", "https://github.com/zotonic/zotonic"}
+  ]}
+ ]}.

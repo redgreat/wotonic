@@ -1,0 +1,1 @@
+{% if class %}class="{{ class }}"{% endif %} 

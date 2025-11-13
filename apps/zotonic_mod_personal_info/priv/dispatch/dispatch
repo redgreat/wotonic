@@ -1,0 +1,5 @@
+%% -*- mode: erlang -*-
+[
+ {admin_personal_info, ["admin", "personal"], controller_personal_info, [seo_noindex]}
+].
+

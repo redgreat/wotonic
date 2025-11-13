@@ -1,0 +1,168 @@
+%% @author Marc Worrell <marc@worrell.nl>
+%% @copyright 2010-2025 Marc Worrell
+%% @doc Show a form to subscribe to a mailinglist. Prefill the form with the account details
+%% of the current user (if any).
+%% @end
+
+%% Copyright 2010-2025 Marc Worrell
+%%
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
+%%
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
+
+-module(scomp_mailinglist_mailinglist_subscribe).
+-moduledoc("
+Show the mailinglist subscription form to subscribe to a certain mailinglist id.
+
+Parameters:
+
+`id`
+
+Required; the id of the mailinglist [resource](/id/doc_glossary#term-resource) that is being subscribed to.
+
+`template`
+
+Which form template to render. Defaults to the template `_scomp_mailinglist_subscribe.tpl`.
+
+All other parameters are passed in to the template which is being rendered.
+
+The form is at least supposed to have an email input field. Besides email, it can have name\\_first,
+name\\_surname\\_prefix and name\\_surname fields, which will be stored in the recipient table.
+").
+-behaviour(zotonic_scomp).
+
+-export([vary/2, render/3, event/2]).
+
+-include_lib("zotonic_core/include/zotonic.hrl").
+
+vary(_Params, _Context) -> nocache.
+render(Params, _Vars, Context) ->
+    Template = proplists:get_value(template, Params, "_scomp_mailinglist_subscribe.tpl"),
+    Props = [
+        {id, m_rsc:rid(proplists:get_value(id, Params), Context)},
+        {send_confirm, z_convert:to_bool(proplists:get_value(send_confirm, Params))},
+        {send_welcome, z_convert:to_bool(proplists:get_value(send_welcome, Params))},
+        {user_id, z_acl:user(Context)},
+        {delegate, ?MODULE}
+        | Params
+    ],
+    {ok, z_template:render(Template, Props, Context)}.
+
+
+event(#submit{message={recipient_add, Props}, form=FormId}, Context) ->
+    ListId = proplists:get_value(id, Props),
+    InAdmin = z_convert:to_bool(proplists:get_value(in_admin, Props)),
+	case z_acl:rsc_visible(ListId, Context) of
+		true ->
+			QEmail = z_context:get_q_validated(<<"email">>, Context),
+			QSendWelcome = z_convert:to_bool(z_context:get_q(<<"send_welcome">>, Context)),
+			QSendConfirm = z_convert:to_bool(z_context:get_q(<<"send_confirm">>, Context)),
+			ArgSendWelcome = z_convert:to_bool(proplists:get_value(send_welcome, Props)),
+			ArgSendConfirm = z_convert:to_bool(proplists:get_value(send_confirm, Props)),
+			CfgSendConfirm = m_config:get_boolean(mod_mailinglist, send_confirm, Context),
+			Notification = if
+				QSendConfirm -> send_confirm;
+				QSendWelcome -> send_welcome;
+				ArgSendConfirm -> send_confirm;
+				ArgSendWelcome -> send_welcome;
+				InAdmin -> silent;
+				CfgSendConfirm -> send_confirm;
+				true -> send_welcome
+			end,
+			RecipientProps = [
+			    {user_id, undefined},
+			    {in_admin, InAdmin},
+			    {name_first, sanitize(z_context:get_q(<<"name_first">>, Context, <<>>))},
+			    {name_surname_prefix, sanitize(z_context:get_q(<<"name_surname_prefix">>, Context, <<>>))},
+			    {name_surname, sanitize(z_context:get_q(<<"name_surname">>, Context, <<>>))},
+                {pref_language, pref_language(Context)}
+			],
+			case m_mailinglist:insert_recipient(ListId, QEmail, RecipientProps, Notification, Context) of
+				ok ->
+				    case InAdmin of
+				        true ->
+        					z_render:wire([	{growl, [{text, ?__("Added the recipient.", Context)}]},
+        									{dialog_close, []},
+        									{reload, []}], Context);
+        				false ->
+					        z_render:wire([ {slide_fade_in, [{target, <<FormId/binary, "-done">>}]},
+					                        {slide_fade_out, [{target, <<FormId/binary, "-form">>}]}], Context)
+        			end;
+				{error, _Reason} ->
+				    case InAdmin of
+				        true ->
+					        z_render:growl_error(?__("Could not add the recipient.", Context), Context);
+					    false ->
+					        z_render:wire([ {slide_fade_in, [{target, <<FormId/binary, "-error">>}]}], Context)
+					end
+			end;
+		false ->
+		    case InAdmin of
+		        true ->
+			        z_render:growl_error(?__("You are not allowed to add or enable recipients.", Context), Context);
+			    false ->
+			        z_render:wire([ {slide_fade_in, [{target, <<FormId/binary, "-error">>}]}], Context)
+			end
+	end;
+
+event(#submit{message={recipient_edit, Props}}, Context) ->
+    ListId = proplists:get_value(id, Props),
+    RcptId = proplists:get_value(recipient_id, Props),
+    InAdmin = z_convert:to_bool(proplists:get_value(in_admin, Props)),
+	case z_acl:rsc_visible(ListId, Context) of
+		true ->
+			RecipientProps = [
+                {email, z_context:get_q_validated(<<"email">>, Context)},
+			    {user_id, undefined},
+			    {in_admin, InAdmin},
+			    {name_first, sanitize(z_context:get_q(<<"name_first">>, Context, <<>>))},
+			    {name_surname_prefix, sanitize(z_context:get_q(<<"name_surname_prefix">>, Context, <<>>))},
+			    {name_surname, sanitize(z_context:get_q(<<"name_surname">>, Context, <<>>))},
+                {pref_language, pref_language(Context)}
+			],
+            ok = m_mailinglist:update_recipient(RcptId, RecipientProps, Context),
+            z_render:wire([	{growl, [{text, ?__("Updated the recipient.", Context)}]},
+                            {dialog_close, []},
+                            {reload, []}], Context);
+		false ->
+		    case InAdmin of
+		        true ->
+			        z_render:growl_error(?__("You are not allowed to edit recipients.", Context), Context);
+			    false ->
+			        z_render:wire([ {slide_down, [{target, "mailinglist_subscribe_error-" ++ integer_to_list(ListId)}]}], Context)
+			end
+	end.
+
+sanitize(undefined) ->
+    undefined;
+sanitize(B) when is_binary(B) ->
+    B1 = z_string:trim(B),
+    sanitize_1(B1, <<>>).
+
+sanitize_1(<<>>, Acc) ->
+    Acc;
+sanitize_1(<<C/utf8, Rest/binary>>, Acc) when C < 32 ->
+    sanitize_1(Rest, <<Acc/binary, " ">>);
+sanitize_1(<<C/utf8, Rest/binary>>, Acc) ->
+    sanitize_1(Rest, <<Acc/binary, C/utf8>>).
+
+
+pref_language(Context) ->
+    Lang = z_context:get_q(pref_language, Context),
+    case z_language:to_language_atom(Lang) of
+        {ok, Code} ->
+            case z_language:is_language_enabled(Code, Context) of
+                true -> Code;
+                false -> z_context:language(Context)
+            end;
+        {error, _} ->
+            z_context:language(Context)
+    end.
