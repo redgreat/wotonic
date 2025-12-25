@@ -12,28 +12,33 @@
 
 services:
     postgres:
-        image: docker.io/library/postgres:16.2-alpine
-        hostname: postgres
-        restart: always
+        image: postgres:16-alpine
         environment:
             POSTGRES_USER: zotonic
-            POSTGRES_DB: zotonic
             POSTGRES_PASSWORD: zotonic
+            POSTGRES_DB: zotonic
         volumes:
             - pgdata:/var/lib/postgresql/data
         ports:
-            - '${DB_FORWARD_PORT:-5432}:5432'
+            - "${DB_FORWARD_PORT:-5432}:5432"
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U zotonic"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
 
     zotonic:
         build:
             dockerfile: docker/Dockerfile.dev
             context: .
+        command: start_nodaemon
         environment:
             ZOTONIC_PORT: 8000
             ZOTONIC_SSL_PORT: 8443
             ZOTONIC_APPS: /opt/zotonic/apps_user
         depends_on:
-            - postgres
+            postgres:
+                condition: service_healthy
         volumes:
             - ./:/opt/zotonic:delegated
         ports:
